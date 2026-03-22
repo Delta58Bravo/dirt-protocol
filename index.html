@@ -786,6 +786,47 @@
     }
     .btn-export:active { opacity: 0.7; }
 
+    /* ── COMPLETE SCREEN ADDITIONS ── */
+    .complete-pr-banner {
+      background: rgba(249,115,22,0.12);
+      border: 1px solid rgba(249,115,22,0.3);
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--orange);
+      margin: 12px 0;
+      text-align: center;
+    }
+    .complete-rating-section {
+      width: 100%;
+      margin: 16px 0 8px;
+    }
+    .complete-rating-label {
+      font-size: 13px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      margin-bottom: 10px;
+    }
+    .star-row {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+    }
+    .star-btn {
+      background: none;
+      border: none;
+      font-size: 36px;
+      color: var(--surface3);
+      cursor: pointer;
+      padding: 4px;
+      line-height: 1;
+      transition: color 0.15s, transform 0.1s;
+    }
+    .star-btn.active { color: var(--orange); }
+    .star-btn:active { transform: scale(1.3); }
+
     /* HISTORY */
     .history-empty {
       text-align: center;
@@ -1091,6 +1132,11 @@ let state = {
   workoutStart: null,
   workoutSessions: [], // loaded from Firebase
   prevWeights: {},     // { exerciseName: { weight, reps } } — last session's data
+  allTimePRs: {},      // { exerciseName: { weight, reps, date } } — all-time bests
+  sessionNewPRs: [],   // exercise names that hit a new PR this session
+  sessionRating: 0,    // 1-5 stars set on complete screen
+  sessionNotes: '',    // free text set on complete screen
+  pendingSessionKey: null, // Firebase key of just-saved session (for rating update)
   blockMeta: null,     // { programId, startDate, weekNumber } from ryan/meta
   calMonth: null,      // Date (1st of displayed month), null = current month
 };
@@ -1178,6 +1224,73 @@ function buildRepsOptions(selected) {
     html += `<option value="${r}"${String(selected) === String(r) ? ' selected' : ''}>${r}</option>`;
   }
   return html;
+}
+
+// ── AUDIO / HAPTIC ───────────────────────────────
+let audioCtx = null;
+function getAudioCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+function playTone(freq, dur, vol = 0.35, type = 'sine') {
+  try {
+    const ctx = getAudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type = type;
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(vol, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur / 1000);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + dur / 1000);
+  } catch(e) {}
+}
+function playRestDone() {
+  // Three ascending beeps — unmistakable
+  playTone(660, 120, 0.4);
+  setTimeout(() => playTone(770, 120, 0.4), 160);
+  setTimeout(() => playTone(880, 220, 0.5), 320);
+  if (navigator.vibrate) navigator.vibrate([80, 60, 80, 60, 180]);
+}
+function playSetLogged() {
+  playTone(523, 80, 0.2); // soft confirm blip
+  if (navigator.vibrate) navigator.vibrate(40);
+}
+// Unlock AudioContext on first touch (iOS requirement)
+document.addEventListener('touchstart', () => { try { getAudioCtx().resume(); } catch(e) {} }, { once: true });
+
+// ── ALL-TIME PR BUILDER ───────────────────────────
+function buildAllTimePRs(sessions) {
+  const prs = {};
+  // sessions newest-first — iterate all to find true all-time best
+  const reversed = [...sessions].reverse(); // oldest first
+  reversed.forEach(s => {
+    if (!s.exercises) return;
+    const date = formatDate(s.startedAt);
+    Object.entries(s.exercises).forEach(([name, ex]) => {
+      const doneSets = (ex.sets || []).filter(s => s.done && s.weight);
+      if (!doneSets.length) return;
+      const best = doneSets.reduce((a,b) => (+b.weight > +a.weight ? b : a));
+      if (!prs[name] || +best.weight > +prs[name].weight) {
+        prs[name] = { weight: best.weight, reps: best.reps, date };
+      }
+    });
+  });
+  return prs;
+}
+
+function detectNewPRs(exercises, prevPRs) {
+  const newPRs = [];
+  Object.entries(exercises).forEach(([name, ex]) => {
+    const doneSets = (ex.sets || []).filter(s => s.done && s.weight);
+    if (!doneSets.length) return;
+    const best = doneSets.reduce((a,b) => (+b.weight > +a.weight ? b : a));
+    if (!prevPRs[name] || +best.weight > +prevPRs[name].weight) {
+      newPRs.push(name);
+    }
+  });
+  return newPRs;
 }
 
 // ── BLOCK HELPERS ────────────────────────────────
@@ -1387,6 +1500,7 @@ function renderLogin() {
       loadSessions(sessions => {
         state.workoutSessions = sessions;
         state.prevWeights = buildPrevWeights(sessions);
+        state.allTimePRs = buildAllTimePRs(sessions);
         loadMeta(meta => {
           state.blockMeta = meta.currentBlock || null;
           state.view = 'home';
@@ -1806,6 +1920,7 @@ window.toggleSet = function(exIdx, setIdx) {
   reRenderWorkout();
 
   if (set.done) {
+    playSetLogged();
     startRest(90);
   }
 };
@@ -1829,14 +1944,26 @@ window.finishWorkout = function() {
     exercises[ex.name] = { sets: state.setData[i] };
   });
 
-  // Update prevWeights from this session
+  // Detect new PRs before updating state
+  state.sessionNewPRs = detectNewPRs(exercises, state.allTimePRs);
+
+  // Update prevWeights + allTimePRs from this session
+  const today = formatDate(Date.now());
   Object.entries(exercises).forEach(([name, ex]) => {
     const doneSets = ex.sets.filter(s => s.done && s.weight);
     if (doneSets.length) {
       const best = doneSets.reduce((a,b) => (+b.weight > +a.weight ? b : a));
       state.prevWeights[name] = { weight: best.weight, reps: best.reps };
+      if (!state.allTimePRs[name] || +best.weight > +state.allTimePRs[name].weight) {
+        state.allTimePRs[name] = { weight: best.weight, reps: best.reps, date: today };
+      }
     }
   });
+
+  // Reset rating/notes for this session
+  state.sessionRating = 0;
+  state.sessionNotes = '';
+  state.pendingSessionKey = null;
 
   const session = {
     programId: state.program.id,
@@ -1849,7 +1976,13 @@ window.finishWorkout = function() {
     exercises
   };
 
-  saveSession(session);
+  // Save and capture the Firebase key so we can attach rating/notes after
+  const sessRef = dbRef('sessions');
+  if (sessRef) {
+    const pushed = sessRef.push(session);
+    state.pendingSessionKey = pushed.key;
+    session.id = pushed.key;
+  }
   state.workoutSessions.unshift(session);
 
   // Block advancement: if we just finished the last day of the program, tick the week
@@ -1917,7 +2050,10 @@ function startRest(seconds) {
     state.restSeconds--;
     const el = document.getElementById('rest-count');
     if (el) el.textContent = state.restSeconds;
-    if (state.restSeconds <= 0) skipRest();
+    if (state.restSeconds <= 0) {
+      playRestDone();
+      skipRest();
+    }
   }, 1000);
 }
 
@@ -1935,29 +2071,64 @@ function renderComplete() {
   const prog = state.program;
   const isLastDay = state.dayIndex === prog.days.length - 1;
   const block = state.blockMeta;
-  const isBlockComplete = isLastDay && block && block.weekNumber === 1 && (state.workoutSessions.filter(s => s.programId === prog.id).length % (prog.days.length * BLOCK_WEEKS) === 0) && state.workoutSessions.length > 1;
+  const newPRs = state.sessionNewPRs || [];
 
   const div = document.createElement('div');
   div.className = 'complete-screen';
+  div.style.paddingBottom = '48px';
+
+  // PR banner
+  const prBanner = newPRs.length
+    ? `<div class="complete-pr-banner">🏅 New PR${newPRs.length > 1 ? 's' : ''}: ${newPRs.slice(0,3).join(', ')}${newPRs.length > 3 ? ` +${newPRs.length-3} more` : ''}</div>`
+    : '';
+
+  // Rating stars
+  const starRow = [1,2,3,4,5].map(n =>
+    `<button class="star-btn${state.sessionRating >= n ? ' active' : ''}" onclick="setRating(${n})" id="star-${n}">★</button>`
+  ).join('');
+
   div.innerHTML = `
-    <div class="complete-icon">${isLastDay && block?.weekNumber > 1 ? '🏆' : '🏁'}</div>
-    <div class="complete-title">${isLastDay ? 'Week ' + (block?.weekNumber || 1) + ' Done.' : 'Session Done.'}</div>
+    <div class="complete-icon">${isLastDay && (block?.weekNumber||1) > 1 ? '🏆' : '🏁'}</div>
+    <div class="complete-title">${isLastDay ? 'Week ' + (block?.weekNumber||1) + ' Done.' : 'Session Done.'}</div>
     <div class="complete-sub">${session.dayName}</div>
     <div class="complete-stats">
-      <div class="hero-stat">
-        <div class="complete-stat-val">${formatDuration(session.duration)}</div>
-        <div class="complete-stat-label">Time</div>
-      </div>
-      <div class="hero-stat">
-        <div class="complete-stat-val">${totalSets}</div>
-        <div class="complete-stat-label">Sets Done</div>
-      </div>
+      <div class="hero-stat"><div class="complete-stat-val">${formatDuration(session.duration)}</div><div class="complete-stat-label">Time</div></div>
+      <div class="hero-stat"><div class="complete-stat-val">${totalSets}</div><div class="complete-stat-label">Sets Done</div></div>
     </div>
-    ${isLastDay && block ? `<div style="margin:12px 0;font-size:13px;color:var(--text-muted);">Block: Week ${block.weekNumber} of ${BLOCK_WEEKS}</div>` : ''}
-    <button class="btn-done" onclick="goDone()">Back to Home</button>
+    ${prBanner}
+    <div class="complete-rating-section">
+      <div class="complete-rating-label">How'd it feel?</div>
+      <div class="star-row">${starRow}</div>
+      <textarea id="session-notes" placeholder="Any notes? (optional — injuries, energy, conditions…)"
+        style="width:100%;background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;padding:12px;margin-top:12px;resize:none;height:80px;outline:none;font-family:inherit;"
+      >${state.sessionNotes}</textarea>
+    </div>
+    <button class="btn-done" id="btn-save-done">SAVE &amp; DONE</button>
   `;
+
+  div.querySelector('#btn-save-done').addEventListener('click', () => {
+    state.sessionNotes = div.querySelector('#session-notes').value.trim();
+    // Update session in Firebase with rating + notes
+    if (state.pendingSessionKey && state.sessionRating) {
+      const ref = dbRef(`sessions/${state.pendingSessionKey}`);
+      if (ref) ref.update({ rating: state.sessionRating, notes: state.sessionNotes });
+      // Also update local copy
+      const local = state.workoutSessions.find(s => s.id === state.pendingSessionKey);
+      if (local) { local.rating = state.sessionRating; local.notes = state.sessionNotes; }
+    }
+    goDone();
+  });
+
   return div;
 }
+
+window.setRating = function(n) {
+  state.sessionRating = n;
+  [1,2,3,4,5].forEach(i => {
+    const btn = document.getElementById(`star-${i}`);
+    if (btn) btn.classList.toggle('active', i <= n);
+  });
+};
 
 window.goDone = function() {
   state.view = 'home';
@@ -1996,14 +2167,18 @@ function renderHistory() {
         return `<div class="history-ex"><div class="history-ex-name">${name}</div><div class="history-sets">${tags}</div></div>`;
       }).join('');
 
+      const ratingHtml = s.rating ? `<div style="color:var(--orange);font-size:13px;letter-spacing:1px;">${'★'.repeat(s.rating)}${'☆'.repeat(5-s.rating)}</div>` : '';
+      const notesHtml = s.notes ? `<div style="font-size:12px;color:var(--text-muted);margin-top:6px;font-style:italic;">"${s.notes}"</div>` : '';
       card.innerHTML = `
         <div class="history-session-header">
           <div>
             <div class="history-session-name">${s.dayName}</div>
             <div class="history-session-date">${formatDate(s.startedAt)} · ${s.programName}</div>
+            ${ratingHtml}
           </div>
           <div class="history-session-dur">${formatDuration(s.duration || 0)}</div>
         </div>
+        ${notesHtml}
         ${exHtml}
       `;
       section.appendChild(card);
@@ -2038,23 +2213,36 @@ function renderProfile() {
     </div>
   `;
 
-  // PRs
-  const prs = Object.entries(state.prevWeights).filter(([,v]) => v.weight);
+  // All-time PR board
+  const prs = Object.entries(state.allTimePRs).filter(([,v]) => v.weight)
+    .sort((a,b) => b[1].weight - a[1].weight);
   if (prs.length) {
     const prSection = document.createElement('div');
-    prSection.innerHTML = `<div class="section-label" style="margin-top:16px;">Personal Records</div>`;
+    prSection.innerHTML = `<div class="section-label" style="margin-top:16px;">Personal Records — All Time 🏅</div>`;
     const card = document.createElement('div');
     card.className = 'card';
+    card.style.padding = '0';
     prs.forEach(([name, val]) => {
       card.innerHTML += `
-        <div class="pr-item">
-          <div class="pr-name">${name}</div>
-          <div class="pr-val">${val.weight} lbs × ${val.reps}</div>
+        <div class="pr-item" style="padding:12px 16px;border-bottom:1px solid var(--border);">
+          <div>
+            <div class="pr-name" style="font-size:14px;font-weight:700;">${name}</div>
+            <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">${val.date}</div>
+          </div>
+          <div class="pr-val" style="text-align:right;">
+            <div style="font-size:18px;font-weight:900;color:var(--orange);">${val.weight}<span style="font-size:11px;font-weight:600;color:var(--text-muted);"> lbs</span></div>
+            <div style="font-size:12px;color:var(--text-muted);">× ${val.reps} reps</div>
+          </div>
         </div>
       `;
     });
+    // Remove last border
+    card.style.overflow = 'hidden';
+    card.style.borderRadius = '14px';
     prSection.appendChild(card);
     section.appendChild(prSection);
+  } else {
+    section.innerHTML += `<div style="text-align:center;padding:32px 20px;color:var(--text-muted);font-size:14px;">Complete a workout to start tracking PRs.</div>`;
   }
 
   div.appendChild(section);
@@ -2069,8 +2257,12 @@ if (localStorage.getItem('dp-auth') === '1') {
   loadSessions(sessions => {
     state.workoutSessions = sessions;
     state.prevWeights = buildPrevWeights(sessions);
-    state.view = 'home';
-    render();
+    state.allTimePRs = buildAllTimePRs(sessions);
+    loadMeta(meta => {
+      state.blockMeta = meta.currentBlock || null;
+      state.view = 'home';
+      render();
+    });
   });
 } else {
   render();
