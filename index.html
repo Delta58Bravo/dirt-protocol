@@ -434,10 +434,10 @@
 
     .sets-area { padding: 12px 16px 16px; }
 
-    /* Column headers — shown once above the first set */
+    /* Column headers */
     .set-col-headers {
       display: grid;
-      grid-template-columns: 36px 1fr 1fr 44px;
+      grid-template-columns: 28px 1fr 1fr 48px;
       gap: 8px;
       margin-bottom: 6px;
       padding: 0 2px;
@@ -445,15 +445,16 @@
     .set-col-label {
       font-size: 10px;
       font-weight: 700;
-      letter-spacing: 1.5px;
+      letter-spacing: 1px;
       text-transform: uppercase;
       color: var(--text-dim);
       text-align: center;
+      line-height: 1.2;
     }
 
     .set-row {
       display: grid;
-      grid-template-columns: 36px 1fr 1fr 44px;
+      grid-template-columns: 28px 1fr 1fr 48px;
       gap: 8px;
       margin-bottom: 8px;
       align-items: center;
@@ -464,33 +465,39 @@
       color: var(--text-dim);
       text-align: center;
     }
-    .set-input {
+    .set-select {
       width: 100%;
       background: var(--surface2);
       border: 1.5px solid var(--border);
       color: var(--text);
-      font-size: 18px;
+      font-size: 17px;
       font-weight: 700;
-      padding: 12px 8px;
+      padding: 12px 4px;
       border-radius: 10px;
       text-align: center;
-      outline: none;
-      min-width: 0;
+      text-align-last: center;
       -webkit-appearance: none;
+      appearance: none;
+      cursor: pointer;
+      outline: none;
     }
-    .set-input:focus { border-color: var(--orange); }
-    .set-input.done-set {
+    .set-select:focus { border-color: var(--orange); }
+    .set-select.done-set {
       background: rgba(34,197,94,0.08);
       border-color: rgba(34,197,94,0.3);
       color: var(--green);
     }
+    .set-select:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
     .set-check {
-      width: 44px; height: 44px;
+      width: 48px; height: 48px;
       background: var(--surface3);
       border: none;
       border-radius: 10px;
       cursor: pointer;
-      font-size: 18px;
+      font-size: 20px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -955,6 +962,34 @@ function buildPrevWeights(sessions) {
 // ════════════════════════════════════════════════
 //  HELPERS
 // ════════════════════════════════════════════════
+// ── PICKERS ──────────────────────────────────────
+function extractDefaultReps(repsStr) {
+  const match = repsStr.match(/\d+/);
+  return match ? match[0] : '10';
+}
+
+function buildWeightOptions(selected) {
+  let html = '<option value="">—</option>';
+  // 0 to 100 in 2.5 lb steps
+  for (let w = 0; w <= 100; w += 2.5) {
+    const v = (w % 1 === 0) ? String(w) : w.toFixed(1);
+    html += `<option value="${v}"${String(selected) === v ? ' selected' : ''}>${v}</option>`;
+  }
+  // 105 to 300 in 5 lb steps
+  for (let w = 105; w <= 300; w += 5) {
+    html += `<option value="${w}"${String(selected) === String(w) ? ' selected' : ''}>${w}</option>`;
+  }
+  return html;
+}
+
+function buildRepsOptions(selected) {
+  let html = '<option value="">—</option>';
+  for (let r = 1; r <= 50; r++) {
+    html += `<option value="${r}"${String(selected) === String(r) ? ' selected' : ''}>${r}</option>`;
+  }
+  return html;
+}
+
 function formatDate(ts) {
   const d = new Date(ts);
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -991,7 +1026,13 @@ function getGreeting() {
 function buildSetData(day) {
   const data = {};
   day.exercises.forEach((ex, i) => {
-    data[i] = Array.from({ length: ex.sets }, () => ({ weight: '', reps: '', done: false }));
+    const prevW = state.prevWeights[ex.name]?.weight || '';
+    const prevR = state.prevWeights[ex.name]?.reps || extractDefaultReps(ex.reps);
+    data[i] = Array.from({ length: ex.sets }, () => ({
+      weight: String(prevW),
+      reps: String(prevR),
+      done: false
+    }));
   });
   return data;
 }
@@ -1302,26 +1343,24 @@ function renderWorkout() {
     const sets = state.setData[i];
     const setsHtml = `
       <div class="set-col-headers">
-        <div class="set-col-label">Set</div>
-        <div class="set-col-label">Weight (lbs)</div>
+        <div class="set-col-label">#</div>
+        <div class="set-col-label">Weight<br>lbs</div>
         <div class="set-col-label">Reps</div>
         <div class="set-col-label">Done</div>
       </div>
     ` + sets.map((set, si) => `
       <div class="set-row" id="set-row-${i}-${si}">
         <div class="set-label">${si+1}</div>
-        <input type="number" inputmode="decimal" placeholder="${prev ? prev.weight : 'lbs'}"
-          value="${set.weight}"
-          class="set-input${set.done ? ' done-set' : ''}"
+        <select class="set-select${set.done ? ' done-set' : ''}"
           id="wt-${i}-${si}"
-          ${!isCurrent || set.done ? 'readonly' : ''}
-        />
-        <input type="number" inputmode="numeric" placeholder="${prev ? prev.reps : ex.reps}"
-          value="${set.reps}"
-          class="set-input${set.done ? ' done-set' : ''}"
+          onchange="onWeightChange(${i},${si})"
+          ${!isCurrent || set.done ? 'disabled' : ''}
+        >${buildWeightOptions(set.weight)}</select>
+        <select class="set-select${set.done ? ' done-set' : ''}"
           id="rp-${i}-${si}"
-          ${!isCurrent || set.done ? 'readonly' : ''}
-        />
+          onchange="onRepsChange(${i},${si})"
+          ${!isCurrent || set.done ? 'disabled' : ''}
+        >${buildRepsOptions(set.reps)}</select>
         <button class="set-check${set.done ? ' checked' : ''}"
           id="chk-${i}-${si}"
           ${!isCurrent ? 'disabled' : ''}
@@ -1366,6 +1405,34 @@ function renderWorkout() {
   return div;
 }
 
+window.onWeightChange = function(exIdx, setIdx) {
+  const val = document.getElementById(`wt-${exIdx}-${setIdx}`)?.value || '';
+  state.setData[exIdx][setIdx].weight = val;
+  // Cascade to all subsequent undone sets
+  const total = state.setData[exIdx].length;
+  for (let si = setIdx + 1; si < total; si++) {
+    if (!state.setData[exIdx][si].done) {
+      state.setData[exIdx][si].weight = val;
+      const el = document.getElementById(`wt-${exIdx}-${si}`);
+      if (el) el.value = val;
+    }
+  }
+};
+
+window.onRepsChange = function(exIdx, setIdx) {
+  const val = document.getElementById(`rp-${exIdx}-${setIdx}`)?.value || '';
+  state.setData[exIdx][setIdx].reps = val;
+  // Cascade to all subsequent undone sets
+  const total = state.setData[exIdx].length;
+  for (let si = setIdx + 1; si < total; si++) {
+    if (!state.setData[exIdx][si].done) {
+      state.setData[exIdx][si].reps = val;
+      const el = document.getElementById(`rp-${exIdx}-${si}`);
+      if (el) el.value = val;
+    }
+  }
+};
+
 window.toggleSet = function(exIdx, setIdx) {
   const wt = document.getElementById(`wt-${exIdx}-${setIdx}`)?.value || '';
   const rp = document.getElementById(`rp-${exIdx}-${setIdx}`)?.value || '';
@@ -1374,7 +1441,6 @@ window.toggleSet = function(exIdx, setIdx) {
   set.reps = rp;
   set.done = !set.done;
 
-  // Start rest timer when marking done
   if (set.done) {
     startRest(90);
   }
