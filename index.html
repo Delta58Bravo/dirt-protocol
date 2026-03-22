@@ -491,6 +491,12 @@
       opacity: 0.5;
       cursor: default;
     }
+    .set-select.suggested {
+      color: var(--text-dim);
+      border-color: var(--border);
+      border-style: dashed;
+      opacity: 0.6;
+    }
     .set-check {
       width: 48px; height: 48px;
       background: var(--surface3);
@@ -1027,10 +1033,13 @@ function buildSetData(day) {
   const data = {};
   day.exercises.forEach((ex, i) => {
     const prevW = state.prevWeights[ex.name]?.weight || '';
-    const prevR = state.prevWeights[ex.name]?.reps || extractDefaultReps(ex.reps);
+    const defaultR = extractDefaultReps(ex.reps);
+    // All sets start "suggested" — user confirms when they log each set
     data[i] = Array.from({ length: ex.sets }, () => ({
       weight: String(prevW),
-      reps: String(prevR),
+      reps: String(defaultR),
+      weightSuggested: true,
+      repsSuggested: true,
       done: false
     }));
   });
@@ -1348,15 +1357,18 @@ function renderWorkout() {
         <div class="set-col-label">Reps</div>
         <div class="set-col-label">Done</div>
       </div>
-    ` + sets.map((set, si) => `
+    ` + sets.map((set, si) => {
+      const wtClass = set.done ? ' done-set' : (set.weightSuggested ? ' suggested' : '');
+      const rpClass = set.done ? ' done-set' : (set.repsSuggested ? ' suggested' : '');
+      return `
       <div class="set-row" id="set-row-${i}-${si}">
         <div class="set-label">${si+1}</div>
-        <select class="set-select${set.done ? ' done-set' : ''}"
+        <select class="set-select${wtClass}"
           id="wt-${i}-${si}"
           onchange="onWeightChange(${i},${si})"
           ${!isCurrent || set.done ? 'disabled' : ''}
         >${buildWeightOptions(set.weight)}</select>
-        <select class="set-select${set.done ? ' done-set' : ''}"
+        <select class="set-select${rpClass}"
           id="rp-${i}-${si}"
           onchange="onRepsChange(${i},${si})"
           ${!isCurrent || set.done ? 'disabled' : ''}
@@ -1367,7 +1379,7 @@ function renderWorkout() {
           onclick="toggleSet(${i}, ${si})"
         >${set.done ? '✓' : '○'}</button>
       </div>
-    `).join('');
+    `}).join('');
 
     const allDone = sets.every(s => s.done);
     const isLast = i === day.exercises.length - 1;
@@ -1407,28 +1419,38 @@ function renderWorkout() {
 
 window.onWeightChange = function(exIdx, setIdx) {
   const val = document.getElementById(`wt-${exIdx}-${setIdx}`)?.value || '';
+  // Mark this set as user-confirmed (not suggested)
   state.setData[exIdx][setIdx].weight = val;
-  // Cascade to all subsequent undone sets
+  state.setData[exIdx][setIdx].weightSuggested = false;
+  const thisEl = document.getElementById(`wt-${exIdx}-${setIdx}`);
+  if (thisEl) thisEl.classList.remove('suggested');
+  // Cascade as suggested to subsequent undone sets
   const total = state.setData[exIdx].length;
   for (let si = setIdx + 1; si < total; si++) {
     if (!state.setData[exIdx][si].done) {
       state.setData[exIdx][si].weight = val;
+      state.setData[exIdx][si].weightSuggested = true;
       const el = document.getElementById(`wt-${exIdx}-${si}`);
-      if (el) el.value = val;
+      if (el) { el.value = val; el.classList.add('suggested'); }
     }
   }
 };
 
 window.onRepsChange = function(exIdx, setIdx) {
   const val = document.getElementById(`rp-${exIdx}-${setIdx}`)?.value || '';
+  // Mark this set as user-confirmed
   state.setData[exIdx][setIdx].reps = val;
-  // Cascade to all subsequent undone sets
+  state.setData[exIdx][setIdx].repsSuggested = false;
+  const thisEl = document.getElementById(`rp-${exIdx}-${setIdx}`);
+  if (thisEl) thisEl.classList.remove('suggested');
+  // Cascade as suggested to subsequent undone sets
   const total = state.setData[exIdx].length;
   for (let si = setIdx + 1; si < total; si++) {
     if (!state.setData[exIdx][si].done) {
       state.setData[exIdx][si].reps = val;
+      state.setData[exIdx][si].repsSuggested = true;
       const el = document.getElementById(`rp-${exIdx}-${si}`);
-      if (el) el.value = val;
+      if (el) { el.value = val; el.classList.add('suggested'); }
     }
   }
 };
@@ -1439,13 +1461,16 @@ window.toggleSet = function(exIdx, setIdx) {
   const set = state.setData[exIdx][setIdx];
   set.weight = wt;
   set.reps = rp;
+  // Confirming a set locks it in — no longer suggested
+  set.weightSuggested = false;
+  set.repsSuggested = false;
   set.done = !set.done;
+
+  reRenderWorkout();
 
   if (set.done) {
     startRest(90);
   }
-
-  reRenderWorkout();
 };
 
 window.nextExercise = function() {
@@ -1503,29 +1528,30 @@ function reRenderWorkout() {
 }
 
 // ── REST TIMER ─────────────────────────────────
-function startRest(seconds) {
-  if (state.restTimer) clearInterval(state.restTimer);
-  state.restSeconds = seconds;
-  state.restActive = true;
-
+function renderRest() {
   const overlay = document.createElement('div');
   overlay.className = 'rest-overlay';
   overlay.id = 'rest-overlay';
   overlay.innerHTML = `
     <div class="rest-label">REST</div>
-    <div class="rest-timer" id="rest-count">${seconds}</div>
+    <div class="rest-timer" id="rest-count">${state.restSeconds}</div>
     <div class="rest-next">Take a breath. Next set coming.</div>
     <button class="rest-skip" onclick="skipRest()">Skip →</button>
   `;
-  document.getElementById('app').appendChild(overlay);
+  return overlay;
+}
+
+function startRest(seconds) {
+  if (state.restTimer) clearInterval(state.restTimer);
+  state.restSeconds = seconds;
+  state.restActive = true;
+  document.getElementById('app').appendChild(renderRest());
 
   state.restTimer = setInterval(() => {
     state.restSeconds--;
     const el = document.getElementById('rest-count');
     if (el) el.textContent = state.restSeconds;
-    if (state.restSeconds <= 0) {
-      skipRest();
-    }
+    if (state.restSeconds <= 0) skipRest();
   }, 1000);
 }
 
