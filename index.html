@@ -1406,6 +1406,14 @@ function formatDuration(ms) {
   return m + ' min';
 }
 
+function formatTotalTime(ms) {
+  const totalMin = Math.round(ms / 60000);
+  if (totalMin < 60) return totalMin + 'm';
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return m > 0 ? h + 'h ' + m + 'm' : h + 'h';
+}
+
 function daysSince(ts) {
   return Math.floor((Date.now() - ts) / 86400000);
 }
@@ -1835,11 +1843,14 @@ function renderWorkout() {
     const allDone = sets.every(s => s.done);
     const isLast = i === day.exercises.length - 1;
 
+    const doneSets = sets.filter(s => s.done).length;
     const actionBtn = (isCurrent && allDone)
       ? (isLast
           ? `<button class="btn-finish" onclick="finishWorkout()">🏁 FINISH WORKOUT</button>`
           : `<button class="btn-next-exercise" onclick="nextExercise()">NEXT EXERCISE →</button>`)
-      : '';
+      : (isCurrent && !allDone
+          ? `<div style="text-align:center;font-size:12px;color:var(--text-dim);padding:10px 0 2px;letter-spacing:0.5px;">${doneSets} of ${sets.length} sets done — mark all ✓ to continue</div>`
+          : '');
 
     card.innerHTML = `
       <div class="exercise-header">
@@ -2208,7 +2219,7 @@ function renderProfile() {
     <div class="profile-stat-grid">
       <div class="profile-stat"><div class="profile-stat-val">${total}</div><div class="profile-stat-label">Sessions</div></div>
       <div class="profile-stat"><div class="profile-stat-val">${streak}</div><div class="profile-stat-label">Streak</div></div>
-      <div class="profile-stat"><div class="profile-stat-val">${Math.round(totalTime/3600000)}h</div><div class="profile-stat-label">Total Time</div></div>
+      <div class="profile-stat"><div class="profile-stat-val">${formatTotalTime(totalTime)}</div><div class="profile-stat-label">Total Time</div></div>
       <div class="profile-stat"><div class="profile-stat-val">${Object.keys(state.prevWeights).length}</div><div class="profile-stat-label">Exercises Logged</div></div>
     </div>
   `;
