@@ -1659,6 +1659,10 @@ function renderWorkout() {
   const hdr = document.createElement('div');
   hdr.className = 'workout-header';
   hdr.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+      <button onclick="exitWorkout()" style="background:none;border:none;color:var(--text-muted);font-size:13px;font-weight:700;padding:4px 0;cursor:pointer;letter-spacing:0.5px;">← Exit</button>
+      <div style="font-size:11px;color:var(--text-dim);letter-spacing:0.5px;">Sets lock on ✓ · FINISH saves</div>
+    </div>
     <div class="workout-meta">${prog.name} · Day ${state.dayIndex + 1}</div>
     <div class="workout-title">${day.name}</div>
     <div class="workout-progress-bar">
@@ -1865,6 +1869,18 @@ window.finishWorkout = function() {
   }
 
   state.view = 'complete';
+  render();
+};
+
+window.exitWorkout = function() {
+  // Check if any sets have been logged
+  const anyDone = Object.values(state.setData).some(sets => sets.some(s => s.done));
+  if (anyDone) {
+    if (!confirm('Exit workout? Sets logged so far won\'t be saved to history.')) return;
+  }
+  if (state.restTimer) clearInterval(state.restTimer);
+  state.restActive = false;
+  state.view = 'home';
   render();
 };
 
