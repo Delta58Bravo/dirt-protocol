@@ -616,6 +616,176 @@
       cursor: pointer;
     }
 
+    /* ── BLOCK BANNER ── */
+    .block-banner {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px 16px;
+      margin-bottom: 12px;
+    }
+    .block-banner-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .block-name {
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: var(--orange);
+    }
+    .block-week-label {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .block-progress-bar {
+      height: 6px;
+      background: var(--surface3);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .block-progress-fill {
+      height: 100%;
+      background: var(--orange);
+      border-radius: 3px;
+      transition: width 0.4s ease;
+    }
+
+    /* ── CALENDAR ── */
+    .cal-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+    .cal-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .cal-nav-btn {
+      background: var(--surface2);
+      border: none;
+      color: var(--text-muted);
+      font-size: 14px;
+      width: 32px; height: 32px;
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .cal-month-label {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+    .cal-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 4px;
+    }
+    .cal-hdr {
+      text-align: center;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      color: var(--text-dim);
+      padding-bottom: 6px;
+    }
+    .cal-day {
+      aspect-ratio: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-dim);
+      border-radius: 50%;
+      position: relative;
+    }
+    .cal-day.cal-trained {
+      background: var(--orange);
+      color: #000;
+      font-weight: 800;
+    }
+    .cal-day.cal-today {
+      border: 2px solid var(--orange);
+      color: var(--text);
+    }
+    .cal-day.cal-today.cal-trained {
+      border: 2px solid #fff;
+    }
+    .cal-day.cal-future {
+      opacity: 0.25;
+    }
+    .cal-legend {
+      display: flex;
+      gap: 16px;
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+    }
+    .cal-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .cal-legend-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+    }
+
+    /* ── STATS ROW ── */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .stat-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 8px;
+      text-align: center;
+    }
+    .stat-box-val {
+      font-size: 24px;
+      font-weight: 900;
+      color: var(--text);
+      line-height: 1;
+    }
+    .stat-box-label {
+      font-size: 10px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-top: 4px;
+    }
+
+    /* ── EXPORT BTN ── */
+    .btn-export {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      padding: 12px;
+      border-radius: 10px;
+      cursor: pointer;
+      margin-bottom: 16px;
+      text-transform: uppercase;
+    }
+    .btn-export:active { opacity: 0.7; }
+
     /* HISTORY */
     .history-empty {
       text-align: center;
@@ -921,6 +1091,8 @@ let state = {
   workoutStart: null,
   workoutSessions: [], // loaded from Firebase
   prevWeights: {},     // { exerciseName: { weight, reps } } — last session's data
+  blockMeta: null,     // { programId, startDate, weekNumber } from ryan/meta
+  calMonth: null,      // Date (1st of displayed month), null = current month
 };
 
 // ════════════════════════════════════════════════
@@ -940,11 +1112,23 @@ function saveSession(session) {
 function loadSessions(callback) {
   const ref = dbRef('sessions');
   if (!ref) { callback([]); return; }
-  ref.orderByChild('startedAt').limitToLast(50).once('value', snap => {
+  ref.orderByChild('startedAt').limitToLast(200).once('value', snap => {
     const sessions = [];
     snap.forEach(child => sessions.unshift({ id: child.key, ...child.val() }));
     callback(sessions);
   });
+}
+
+function loadMeta(callback) {
+  const ref = dbRef('meta');
+  if (!ref) { callback({}); return; }
+  ref.once('value', snap => callback(snap.val() || {}));
+}
+
+function saveMeta(data) {
+  const ref = dbRef('meta');
+  if (!ref) return;
+  ref.update(data);
 }
 
 function buildPrevWeights(sessions) {
@@ -994,6 +1178,109 @@ function buildRepsOptions(selected) {
     html += `<option value="${r}"${String(selected) === String(r) ? ' selected' : ''}>${r}</option>`;
   }
   return html;
+}
+
+// ── BLOCK HELPERS ────────────────────────────────
+const BLOCK_WEEKS = 8;
+
+function initBlock(programId) {
+  const today = new Date().toISOString().split('T')[0];
+  const meta = { programId, startDate: today, weekNumber: 1 };
+  state.blockMeta = meta;
+  saveMeta({ currentBlock: meta, activeProgramId: programId, activeDayIdx: 0 });
+}
+
+function advanceBlock() {
+  // Called when all days in a program cycle are complete
+  const meta = state.blockMeta || {};
+  const newWeek = (meta.weekNumber || 0) + 1;
+  const updated = { ...meta, weekNumber: newWeek };
+  state.blockMeta = updated;
+  saveMeta({ currentBlock: updated, activeDayIdx: 0 });
+  return newWeek;
+}
+
+function thisWeekCount(sessions) {
+  const startOfWeek = (() => {
+    const d = new Date();
+    const day = d.getDay(); // 0 = Sun
+    d.setDate(d.getDate() - ((day + 6) % 7)); // back to Monday
+    d.setHours(0,0,0,0);
+    return d.getTime();
+  })();
+  return sessions.filter(s => s.startedAt >= startOfWeek).length;
+}
+
+// ── CALENDAR HELPERS ─────────────────────────────
+function buildTrainingSet(sessions, year, month) {
+  const set = new Set();
+  sessions.forEach(s => {
+    const d = new Date(s.startedAt);
+    if (d.getFullYear() === year && d.getMonth() === month) set.add(d.getDate());
+  });
+  return set;
+}
+
+function renderCalendarHTML(sessions, monthDate) {
+  const year = monthDate.getFullYear();
+  const month = monthDate.getMonth();
+  const today = new Date();
+  const trained = buildTrainingSet(sessions, year, month);
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstDow = (new Date(year, month, 1).getDay() + 6) % 7; // Mon=0
+  const monthLabel = monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+  let cells = ['M','T','W','T','F','S','S'].map(d => `<div class="cal-hdr">${d}</div>`).join('');
+  for (let i = 0; i < firstDow; i++) cells += '<div></div>';
+  for (let d = 1; d <= daysInMonth; d++) {
+    const isToday = year === today.getFullYear() && month === today.getMonth() && d === today.getDate();
+    const isFuture = new Date(year, month, d) > today;
+    const wasTrained = trained.has(d);
+    let cls = 'cal-day';
+    if (wasTrained) cls += ' cal-trained';
+    if (isToday) cls += ' cal-today';
+    if (isFuture) cls += ' cal-future';
+    cells += `<div class="${cls}">${d}</div>`;
+  }
+
+  return `
+    <div class="cal-wrap">
+      <div class="cal-nav">
+        <button class="cal-nav-btn" onclick="calPrev()">◀</button>
+        <div class="cal-month-label">${monthLabel}</div>
+        <button class="cal-nav-btn" onclick="calNext()">▶</button>
+      </div>
+      <div class="cal-grid">${cells}</div>
+      <div class="cal-legend">
+        <div class="cal-legend-item"><div class="cal-legend-dot" style="background:var(--orange);"></div>Trained</div>
+        <div class="cal-legend-item"><div class="cal-legend-dot" style="border:2px solid var(--orange);"></div>Today</div>
+        <div class="cal-legend-item"><div class="cal-legend-dot" style="background:var(--surface3);"></div>Rest</div>
+      </div>
+    </div>
+  `;
+}
+
+// ── CSV EXPORT ────────────────────────────────────
+function exportCSV(sessions) {
+  const rows = [['Date','Program','Day','Exercise','Set','Weight (lbs)','Reps']];
+  sessions.forEach(s => {
+    const date = new Date(s.startedAt).toLocaleDateString('en-US', { year:'numeric', month:'2-digit', day:'2-digit' });
+    Object.entries(s.exercises || {}).forEach(([name, ex]) => {
+      (ex.sets || []).forEach((set, i) => {
+        if (set.done) {
+          rows.push([date, s.programName, s.dayName, name, i+1, set.weight || '', set.reps || '']);
+        }
+      });
+    });
+  });
+  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `dirt-protocol-${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 function formatDate(ts) {
@@ -1100,8 +1387,11 @@ function renderLogin() {
       loadSessions(sessions => {
         state.workoutSessions = sessions;
         state.prevWeights = buildPrevWeights(sessions);
-        state.view = 'home';
-        render();
+        loadMeta(meta => {
+          state.blockMeta = meta.currentBlock || null;
+          state.view = 'home';
+          render();
+        });
       });
     } else {
       div.querySelector('#login-err').style.display = 'block';
@@ -1139,64 +1429,96 @@ function renderNav() {
   return nav;
 }
 
-// ── HOME ───────────────────────────────────────
+// ── HOME / DASHBOARD ───────────────────────────
 function renderHome() {
   const div = document.createElement('div');
   div.className = 'main-content scroll-view';
 
-  const streak = getStreak(state.workoutSessions);
-  const total = state.workoutSessions.length;
-  const lastSession = state.workoutSessions[0];
-  const lastText = lastSession ? `${daysSince(lastSession.startedAt) === 0 ? 'Today' : daysSince(lastSession.startedAt) + 'd ago'} · ${lastSession.dayName}` : 'No sessions yet';
+  const sessions = state.workoutSessions;
+  const streak = getStreak(sessions);
+  const total = sessions.length;
+  const thisWeek = thisWeekCount(sessions);
+  const lastSession = sessions[0];
 
-  // Suggest next workout
+  // Determine active program + next day
+  const block = state.blockMeta;
   let nextProgram = PROGRAMS[0];
   let nextDayIndex = 0;
-  if (lastSession) {
-    const progIdx = PROGRAMS.findIndex(p => p.id === lastSession.programId);
-    if (progIdx >= 0) {
-      nextProgram = PROGRAMS[progIdx];
-      nextDayIndex = (lastSession.dayIndex + 1) % nextProgram.days.length;
-    }
+  let weekNumber = block?.weekNumber || 1;
+
+  if (block?.programId) {
+    const p = PROGRAMS.find(p => p.id === block.programId);
+    if (p) nextProgram = p;
+  } else if (lastSession) {
+    const p = PROGRAMS.find(p => p.id === lastSession.programId);
+    if (p) nextProgram = p;
+  }
+
+  // Find next day from last session of this program
+  const lastForProgram = sessions.find(s => s.programId === nextProgram.id);
+  if (lastForProgram) {
+    nextDayIndex = (lastForProgram.dayIndex + 1) % nextProgram.days.length;
   }
   const nextDay = nextProgram.days[nextDayIndex];
 
+  // Block progress
+  const blockPct = Math.round(((weekNumber - 1) / BLOCK_WEEKS) * 100);
+  const weekLabel = `Week ${weekNumber} of ${BLOCK_WEEKS}`;
+
+  // Calendar month
+  if (!state.calMonth) state.calMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  const calHTML = renderCalendarHTML(sessions, state.calMonth);
+
   div.innerHTML = `
-    <div class="page-header" style="padding-top:24px; padding-bottom:20px;">
+    <div class="page-header" style="padding-top:24px; padding-bottom:16px;">
       <div>
-        <div style="font-size:13px;color:var(--text-muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;">${getGreeting()}, Bravo</div>
+        <div style="font-size:12px;color:var(--text-muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;">${getGreeting()}, Bravo</div>
         <div class="page-title">DIRT<span>PROTOCOL</span></div>
       </div>
       <button onclick="doLogout()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text-muted);font-size:12px;padding:6px 12px;border-radius:8px;cursor:pointer;">Logout</button>
     </div>
 
     <div class="section" style="padding-top:0;">
-      <div class="hero-card">
-        <div class="hero-stats">
-          <div class="hero-stat">
-            <div class="hero-stat-val">${streak}</div>
-            <div class="hero-stat-label">Day Streak</div>
-          </div>
-          <div class="hero-stat">
-            <div class="hero-stat-val">${total}</div>
-            <div class="hero-stat-label">Total Sessions</div>
-          </div>
-          <div class="hero-stat">
-            <div class="hero-stat-val">${lastSession ? formatDuration(lastSession.duration || 0) : '—'}</div>
-            <div class="hero-stat-label">Last Session</div>
-          </div>
+
+      <!-- Block Progress -->
+      <div class="block-banner">
+        <div class="block-banner-top">
+          <div class="block-name">${nextProgram.name}</div>
+          <div class="block-week-label">${weekLabel}</div>
+        </div>
+        <div class="block-progress-bar">
+          <div class="block-progress-fill" style="width:${blockPct}%"></div>
         </div>
       </div>
 
-      <div class="section-label" style="margin-top:8px;">Next Up</div>
+      <!-- Stats Row -->
+      <div class="stats-row">
+        <div class="stat-box">
+          <div class="stat-box-val">🔥${streak}</div>
+          <div class="stat-box-label">Streak</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-box-val">${thisWeek}</div>
+          <div class="stat-box-label">This Week</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-box-val">${total}</div>
+          <div class="stat-box-label">Total</div>
+        </div>
+      </div>
+
+      <!-- Monthly Calendar -->
+      ${calHTML}
+
+      <!-- Next Workout CTA -->
       <div class="next-up-card" id="next-up-card">
-        <div class="next-up-label">▸ ${nextProgram.name}</div>
+        <div class="next-up-label">▸ Up Next</div>
         <div class="next-up-title">Day ${nextDayIndex + 1}: ${nextDay.name}</div>
-        <div class="next-up-sub">${nextDay.focus}</div>
-        <div class="next-up-sub" style="margin-top:4px;">${nextDay.exercises.length} exercises</div>
+        <div class="next-up-sub">${nextDay.focus} · ${nextDay.exercises.length} exercises</div>
         <button class="btn-start" id="start-next-btn">START WORKOUT</button>
       </div>
 
+      <!-- Last Session -->
       ${lastSession ? `
       <div class="section-label" style="margin-top:8px;">Last Session</div>
       <div class="card">
@@ -1217,6 +1539,17 @@ function renderHome() {
 
   return div;
 }
+
+window.calPrev = function() {
+  const m = state.calMonth || new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  state.calMonth = new Date(m.getFullYear(), m.getMonth() - 1, 1);
+  render();
+};
+window.calNext = function() {
+  const m = state.calMonth || new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  const next = new Date(m.getFullYear(), m.getMonth() + 1, 1);
+  if (next <= new Date()) { state.calMonth = next; render(); }
+};
 
 function doLogout() {
   state.authed = false;
@@ -1514,6 +1847,23 @@ window.finishWorkout = function() {
 
   saveSession(session);
   state.workoutSessions.unshift(session);
+
+  // Block advancement: if we just finished the last day of the program, tick the week
+  const prog = state.program;
+  const isLastDay = (state.dayIndex === prog.days.length - 1);
+  if (isLastDay) {
+    const newWeek = advanceBlock();
+    if (newWeek > BLOCK_WEEKS) {
+      // Block complete — reset to week 1, let user decide on program
+      const resetMeta = { programId: prog.id, startDate: new Date().toISOString().split('T')[0], weekNumber: 1 };
+      state.blockMeta = resetMeta;
+      saveMeta({ currentBlock: resetMeta, activeDayIdx: 0 });
+    }
+  } else {
+    saveMeta({ activeProgramId: prog.id, activeDayIdx: state.dayIndex + 1 });
+    if (!state.blockMeta) initBlock(prog.id);
+  }
+
   state.view = 'complete';
   render();
 };
@@ -1566,12 +1916,16 @@ window.skipRest = function() {
 function renderComplete() {
   const session = state.workoutSessions[0];
   const totalSets = Object.values(session.exercises || {}).reduce((acc, ex) => acc + ex.sets.filter(s => s.done).length, 0);
+  const prog = state.program;
+  const isLastDay = state.dayIndex === prog.days.length - 1;
+  const block = state.blockMeta;
+  const isBlockComplete = isLastDay && block && block.weekNumber === 1 && (state.workoutSessions.filter(s => s.programId === prog.id).length % (prog.days.length * BLOCK_WEEKS) === 0) && state.workoutSessions.length > 1;
 
   const div = document.createElement('div');
   div.className = 'complete-screen';
   div.innerHTML = `
-    <div class="complete-icon">🏁</div>
-    <div class="complete-title">Session Done.</div>
+    <div class="complete-icon">${isLastDay && block?.weekNumber > 1 ? '🏆' : '🏁'}</div>
+    <div class="complete-title">${isLastDay ? 'Week ' + (block?.weekNumber || 1) + ' Done.' : 'Session Done.'}</div>
     <div class="complete-sub">${session.dayName}</div>
     <div class="complete-stats">
       <div class="hero-stat">
@@ -1583,6 +1937,7 @@ function renderComplete() {
         <div class="complete-stat-label">Sets Done</div>
       </div>
     </div>
+    ${isLastDay && block ? `<div style="margin:12px 0;font-size:13px;color:var(--text-muted);">Block: Week ${block.weekNumber} of ${BLOCK_WEEKS}</div>` : ''}
     <button class="btn-done" onclick="goDone()">Back to Home</button>
   `;
   return div;
@@ -1597,11 +1952,20 @@ window.goDone = function() {
 function renderHistory() {
   const div = document.createElement('div');
   div.className = 'main-content scroll-view';
-  div.innerHTML = `<div class="page-header" style="padding-bottom:20px;"><div class="page-title">History</div></div>`;
+  div.innerHTML = `<div class="page-header" style="padding-bottom:16px;"><div class="page-title">History</div></div>`;
 
   const section = document.createElement('div');
   section.className = 'section';
   section.style.paddingTop = '0';
+
+  // CSV Export button
+  if (state.workoutSessions.length) {
+    const exportBtn = document.createElement('button');
+    exportBtn.className = 'btn-export';
+    exportBtn.textContent = '↓ Export to CSV';
+    exportBtn.addEventListener('click', () => exportCSV(state.workoutSessions));
+    section.appendChild(exportBtn);
+  }
 
   if (!state.workoutSessions.length) {
     section.innerHTML = `<div class="history-empty">No sessions yet.<br>Complete your first workout to see history here.</div>`;
