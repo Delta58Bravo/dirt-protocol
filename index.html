@@ -769,6 +769,103 @@
       margin-top: 4px;
     }
 
+    /* ── PROFILE ── */
+    .profile-avatar {
+      width: 72px; height: 72px;
+      border-radius: 50%;
+      background: var(--orange);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 28px; font-weight: 900; color: #000;
+      flex-shrink: 0;
+    }
+    .profile-hero {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+    .profile-hero-info { flex: 1; min-width: 0; }
+    .profile-hero-name {
+      font-size: 22px; font-weight: 900; color: var(--text);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .profile-hero-meta {
+      font-size: 12px; color: var(--text-muted); margin-top: 4px; line-height: 1.5;
+    }
+    .profile-hero-goal {
+      font-size: 13px; color: var(--orange); margin-top: 6px; font-weight: 700;
+    }
+    .btn-edit-profile {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 12px; font-weight: 700;
+      padding: 6px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+    }
+    .profile-edit-form {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+    .profile-field {
+      margin-bottom: 12px;
+    }
+    .profile-field label {
+      display: block;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 6px;
+    }
+    .profile-field input {
+      width: 100%;
+      background: var(--surface2);
+      border: 1.5px solid var(--border);
+      color: var(--text);
+      font-size: 16px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      outline: none;
+    }
+    .profile-field input:focus { border-color: var(--orange); }
+    .btn-save-profile {
+      width: 100%;
+      background: var(--orange);
+      border: none;
+      color: #000;
+      font-size: 14px;
+      font-weight: 900;
+      letter-spacing: 1.5px;
+      padding: 14px;
+      border-radius: 10px;
+      cursor: pointer;
+      margin-top: 4px;
+    }
+    .stats-extended {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .stats-extended-2 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
     /* ── EXPORT BTN ── */
     .btn-export {
       width: 100%;
@@ -1139,6 +1236,7 @@ let state = {
   pendingSessionKey: null, // Firebase key of just-saved session (for rating update)
   blockMeta: null,     // { programId, startDate, weekNumber } from ryan/meta
   calMonth: null,      // Date (1st of displayed month), null = current month
+  userProfile: { name: '', bodyweight: '', goal: '', location: '' }, // editable profile
 };
 
 // ════════════════════════════════════════════════
@@ -1173,6 +1271,18 @@ function loadMeta(callback) {
 
 function saveMeta(data) {
   const ref = dbRef('meta');
+  if (!ref) return;
+  ref.update(data);
+}
+
+function loadProfile(callback) {
+  const ref = dbRef('profile');
+  if (!ref) { callback({}); return; }
+  ref.once('value', snap => callback(snap.val() || {}));
+}
+
+function saveProfile(data) {
+  const ref = dbRef('profile');
   if (!ref) return;
   ref.update(data);
 }
@@ -1511,8 +1621,11 @@ function renderLogin() {
         state.allTimePRs = buildAllTimePRs(sessions);
         loadMeta(meta => {
           state.blockMeta = meta.currentBlock || null;
-          state.view = 'home';
-          render();
+          loadProfile(prof => {
+            state.userProfile = { name:'', location:'', bodyweight:'', goal:'', ...prof };
+            state.view = 'home';
+            render();
+          });
         });
       });
     } else {
@@ -2204,59 +2317,154 @@ function renderHistory() {
 function renderProfile() {
   const div = document.createElement('div');
   div.className = 'main-content scroll-view';
-  div.innerHTML = `<div class="page-header" style="padding-bottom:20px;"><div class="page-title">Profile</div></div>`;
 
   const section = document.createElement('div');
   section.className = 'section';
-  section.style.paddingTop = '0';
+  section.style.paddingTop = '16px';
 
-  const total = state.workoutSessions.length;
-  const streak = getStreak(state.workoutSessions);
-  const totalTime = state.workoutSessions.reduce((a,s) => a + (s.duration||0), 0);
+  const sessions = state.workoutSessions;
+  const total = sessions.length;
+  const streak = getStreak(sessions);
+  const totalTime = sessions.reduce((a,s) => a + (s.duration||0), 0);
+  const thisWeek = thisWeekCount(sessions);
+  const thisMonth = sessions.filter(s => {
+    const d = new Date(s.startedAt);
+    const now = new Date();
+    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  }).length;
+  const avgMin = total ? Math.round(sessions.reduce((a,s) => a + (s.duration||0), 0) / total / 60000) : 0;
 
-  section.innerHTML += `
-    <div class="section-label">Stats</div>
-    <div class="profile-stat-grid">
-      <div class="profile-stat"><div class="profile-stat-val">${total}</div><div class="profile-stat-label">Sessions</div></div>
-      <div class="profile-stat"><div class="profile-stat-val">${streak}</div><div class="profile-stat-label">Streak</div></div>
-      <div class="profile-stat"><div class="profile-stat-val">${formatTotalTime(totalTime)}</div><div class="profile-stat-label">Total Time</div></div>
-      <div class="profile-stat"><div class="profile-stat-val">${Object.keys(state.prevWeights).length}</div><div class="profile-stat-label">Exercises Logged</div></div>
+  const prof = state.userProfile;
+  const initials = prof.name
+    ? prof.name.trim().split(' ').map(w => w[0]).join('').toUpperCase().slice(0,2)
+    : '?';
+
+  // ── Hero card
+  const heroEl = document.createElement('div');
+  heroEl.innerHTML = `
+    <div class="profile-hero">
+      <div class="profile-avatar">${initials}</div>
+      <div class="profile-hero-info">
+        <div class="profile-hero-name">${prof.name || 'Add your name'}</div>
+        <div class="profile-hero-meta">
+          ${prof.location ? prof.location + '<br>' : ''}
+          ${prof.bodyweight ? prof.bodyweight + ' lbs bodyweight' : ''}
+        </div>
+        ${prof.goal ? `<div class="profile-hero-goal">🎯 ${prof.goal}</div>` : ''}
+      </div>
+      <button class="btn-edit-profile" id="btn-edit-profile">Edit</button>
     </div>
   `;
+  section.appendChild(heroEl);
 
-  // All-time PR board
+  // ── Edit form (hidden by default)
+  const editEl = document.createElement('div');
+  editEl.id = 'profile-edit-form';
+  editEl.className = 'profile-edit-form';
+  editEl.style.display = 'none';
+  editEl.innerHTML = `
+    <div class="profile-field">
+      <label>Name</label>
+      <input id="pf-name" type="text" placeholder="Ryan B" value="${prof.name || ''}" />
+    </div>
+    <div class="profile-field">
+      <label>Location</label>
+      <input id="pf-location" type="text" placeholder="Ladera Ranch, CA" value="${prof.location || ''}" />
+    </div>
+    <div class="profile-field">
+      <label>Bodyweight (lbs)</label>
+      <input id="pf-bw" type="number" inputmode="decimal" placeholder="175" value="${prof.bodyweight || ''}" />
+    </div>
+    <div class="profile-field">
+      <label>Training Goal</label>
+      <input id="pf-goal" type="text" placeholder="Moto season prep" value="${prof.goal || ''}" />
+    </div>
+    <button class="btn-save-profile" id="btn-save-profile">SAVE PROFILE</button>
+  `;
+  section.appendChild(editEl);
+
+  // ── Stats
+  const statsEl = document.createElement('div');
+  statsEl.innerHTML = `
+    <div class="section-label" style="margin-top:4px;">Stats</div>
+    <div class="stats-extended">
+      <div class="stat-box"><div class="stat-box-val">${total}</div><div class="stat-box-label">Total</div></div>
+      <div class="stat-box"><div class="stat-box-val">🔥${streak}</div><div class="stat-box-label">Streak</div></div>
+      <div class="stat-box"><div class="stat-box-val">${formatTotalTime(totalTime)}</div><div class="stat-box-label">Time</div></div>
+    </div>
+    <div class="stats-extended-2">
+      <div class="stat-box"><div class="stat-box-val">${thisWeek}</div><div class="stat-box-label">This Week</div></div>
+      <div class="stat-box"><div class="stat-box-val">${thisMonth}</div><div class="stat-box-label">This Month</div></div>
+      <div class="stat-box"><div class="stat-box-val">${avgMin}m</div><div class="stat-box-label">Avg Session</div></div>
+    </div>
+  `;
+  section.appendChild(statsEl);
+
+  // ── PR board
   const prs = Object.entries(state.allTimePRs).filter(([,v]) => v.weight)
-    .sort((a,b) => b[1].weight - a[1].weight);
+    .sort((a,b) => +b[1].weight - +a[1].weight);
+  const prEl = document.createElement('div');
   if (prs.length) {
-    const prSection = document.createElement('div');
-    prSection.innerHTML = `<div class="section-label" style="margin-top:16px;">Personal Records — All Time 🏅</div>`;
+    prEl.innerHTML = `<div class="section-label" style="margin-top:4px;">Personal Records — All Time 🏅</div>`;
     const card = document.createElement('div');
     card.className = 'card';
-    card.style.padding = '0';
+    card.style.cssText = 'padding:0;overflow:hidden;border-radius:14px;';
     prs.forEach(([name, val]) => {
       card.innerHTML += `
-        <div class="pr-item" style="padding:12px 16px;border-bottom:1px solid var(--border);">
+        <div class="pr-item" style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
           <div>
-            <div class="pr-name" style="font-size:14px;font-weight:700;">${name}</div>
+            <div style="font-size:14px;font-weight:700;">${name}</div>
             <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">${val.date}</div>
           </div>
-          <div class="pr-val" style="text-align:right;">
+          <div style="text-align:right;">
             <div style="font-size:18px;font-weight:900;color:var(--orange);">${val.weight}<span style="font-size:11px;font-weight:600;color:var(--text-muted);"> lbs</span></div>
             <div style="font-size:12px;color:var(--text-muted);">× ${val.reps} reps</div>
           </div>
         </div>
       `;
     });
-    // Remove last border
-    card.style.overflow = 'hidden';
-    card.style.borderRadius = '14px';
-    prSection.appendChild(card);
-    section.appendChild(prSection);
+    prEl.appendChild(card);
   } else {
-    section.innerHTML += `<div style="text-align:center;padding:32px 20px;color:var(--text-muted);font-size:14px;">Complete a workout to start tracking PRs.</div>`;
+    prEl.innerHTML = `<div style="text-align:center;padding:32px 20px;color:var(--text-muted);font-size:14px;">Complete a workout to start tracking PRs.</div>`;
   }
+  section.appendChild(prEl);
 
   div.appendChild(section);
+
+  // ── Wire events after render
+  setTimeout(() => {
+    const editBtn = document.getElementById('btn-edit-profile');
+    const form = document.getElementById('profile-edit-form');
+    const saveBtn = document.getElementById('btn-save-profile');
+    if (editBtn) editBtn.addEventListener('click', () => {
+      const isOpen = form.style.display !== 'none';
+      form.style.display = isOpen ? 'none' : 'block';
+      editBtn.textContent = isOpen ? 'Edit' : 'Cancel';
+    });
+    if (saveBtn) saveBtn.addEventListener('click', () => {
+      const updated = {
+        name: document.getElementById('pf-name').value.trim(),
+        location: document.getElementById('pf-location').value.trim(),
+        bodyweight: document.getElementById('pf-bw').value.trim(),
+        goal: document.getElementById('pf-goal').value.trim(),
+      };
+      state.userProfile = updated;
+      saveProfile(updated);
+      form.style.display = 'none';
+      editBtn.textContent = 'Edit';
+      // Re-render hero area
+      const avatar = document.querySelector('.profile-avatar');
+      const nameEl = document.querySelector('.profile-hero-name');
+      const metaEl = document.querySelector('.profile-hero-meta');
+      const goalEl = document.querySelector('.profile-hero-goal');
+      const init = updated.name ? updated.name.trim().split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2) : '?';
+      if (avatar) avatar.textContent = init;
+      if (nameEl) nameEl.textContent = updated.name || 'Add your name';
+      if (metaEl) metaEl.innerHTML = (updated.location ? updated.location + '<br>' : '') + (updated.bodyweight ? updated.bodyweight + ' lbs bodyweight' : '');
+      if (goalEl) goalEl.textContent = updated.goal ? '🎯 ' + updated.goal : '';
+    });
+  }, 0);
+
   return div;
 }
 
@@ -2271,8 +2479,11 @@ if (localStorage.getItem('dp-auth') === '1') {
     state.allTimePRs = buildAllTimePRs(sessions);
     loadMeta(meta => {
       state.blockMeta = meta.currentBlock || null;
-      state.view = 'home';
-      render();
+      loadProfile(prof => {
+        state.userProfile = { name:'', location:'', bodyweight:'', goal:'', ...prof };
+        state.view = 'home';
+        render();
+      });
     });
   });
 } else {
