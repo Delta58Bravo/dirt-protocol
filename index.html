@@ -1325,6 +1325,12 @@ function renderWorkout() {
     const allDone = sets.every(s => s.done);
     const isLast = i === day.exercises.length - 1;
 
+    const actionBtn = (isCurrent && allDone)
+      ? (isLast
+          ? `<button class="btn-finish" onclick="finishWorkout()">🏁 FINISH WORKOUT</button>`
+          : `<button class="btn-next-exercise" onclick="nextExercise()">NEXT EXERCISE →</button>`)
+      : '';
+
     card.innerHTML = `
       <div class="exercise-header">
         <div>
@@ -1337,11 +1343,7 @@ function renderWorkout() {
       </div>
       ${prevHtml}
       <div class="sets-area">${setsHtml}</div>
-      ${isCurrent && allDone ? `
-        <button class="${isLast ? 'btn-finish' : 'btn-next-exercise'}" onclick="${isLast ? 'finishWorkout()' : 'nextExercise()}'" >
-          ${isLast ? '🏁 FINISH WORKOUT' : 'NEXT EXERCISE →'}
-        </button>
-      ` : ''}
+      ${actionBtn}
     `;
 
     div.appendChild(card);
