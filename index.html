@@ -1725,6 +1725,7 @@ let state = {
   warmupTimer: null,
   pendingRecovery: null,
   completedBlockStats: null,
+  pendingBlockComplete: false,
   swapModalOpen: false,
   workoutStart: null,
   workoutSessions: [], // loaded from Firebase
@@ -1983,7 +1984,7 @@ function buildChartSVG(points) {
 }
 
 window.showExerciseChart = function(name_or_el) {
-  const name = typeof name_or_el === 'string' ? name_or_el : name_or_el;
+  const name = name_or_el;
   const points = getExerciseHistory(name, state.workoutSessions);
   const modal = document.createElement('div');
   modal.className = 'chart-modal';
@@ -3124,8 +3125,11 @@ window.finishWorkout = function() {
   if (isLastDay) {
     const newWeek = advanceBlock();
     if (newWeek > BLOCK_WEEKS) {
-      // Block complete — collect stats, reset to week 1
-      const blockSessions = state.workoutSessions.filter(s => s.programId === prog.id);
+      // Block complete — collect stats for THIS block only (since startDate), reset to week 1
+      const blockStart = state.blockMeta?.startDate ? new Date(state.blockMeta.startDate).getTime() : 0;
+      const blockSessions = state.workoutSessions.filter(s =>
+        s.programId === prog.id && s.startedAt >= blockStart
+      );
       const blockTime = blockSessions.reduce((a,s) => a + (s.duration||0), 0);
       const prCount = state.sessionNewPRs?.length || 0;
       state.completedBlockStats = {
@@ -3167,7 +3171,8 @@ function reRenderWorkout() {
   root.innerHTML = '';
   const wrap = document.createElement('div');
   wrap.appendChild(renderWorkout());
-  if (state.restActive) wrap.appendChild(renderRest());
+  // NOTE: rest overlay is NOT appended here — startRest/skipRest own it.
+  // Appending it here would create a duplicate when toggleSet() calls startRest() next.
   root.appendChild(wrap);
 }
 
@@ -3287,10 +3292,10 @@ function renderComplete() {
 
   div.querySelector('#btn-save-done').addEventListener('click', () => {
     state.sessionNotes = div.querySelector('#session-notes').value.trim();
-    // Update session in Firebase with rating + notes
-    if (state.pendingSessionKey && state.sessionRating) {
+    // Update session in Firebase with rating + notes (save if either is set)
+    if (state.pendingSessionKey && (state.sessionRating || state.sessionNotes)) {
       const ref = dbRef(`sessions/${state.pendingSessionKey}`);
-      if (ref) ref.update({ rating: state.sessionRating, notes: state.sessionNotes });
+      if (ref) ref.update({ rating: state.sessionRating || null, notes: state.sessionNotes || null });
       // Also update local copy
       const local = state.workoutSessions.find(s => s.id === state.pendingSessionKey);
       if (local) { local.rating = state.sessionRating; local.notes = state.sessionNotes; }
