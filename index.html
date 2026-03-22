@@ -583,6 +583,132 @@
       border-radius: 10px;
       cursor: pointer;
     }
+    .rest-presets {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 24px;
+    }
+    .rest-preset-btn {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 700;
+      padding: 6px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      letter-spacing: 0.5px;
+    }
+    .rest-preset-btn.active {
+      border-color: var(--orange);
+      color: var(--orange);
+    }
+    .rest-adjust {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      margin-bottom: 28px;
+    }
+    .rest-adj-btn {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 20px;
+      font-weight: 700;
+      width: 48px; height: 48px;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    /* CHART MODAL */
+    .chart-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.94);
+      z-index: 300;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .chart-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 20px;
+      width: 100%;
+      max-width: 420px;
+    }
+    .chart-title {
+      font-size: 14px;
+      font-weight: 800;
+      margin-bottom: 4px;
+      color: var(--text);
+    }
+    .chart-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+    }
+    .chart-close {
+      margin-top: 16px;
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 13px;
+      font-weight: 700;
+      padding: 12px;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+
+    /* TRAINED TODAY */
+    .trained-today-card {
+      background: rgba(34,197,94,0.07);
+      border: 1px solid rgba(34,197,94,0.25);
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .trained-today-icon {
+      font-size: 32px;
+      flex-shrink: 0;
+    }
+    .trained-today-title {
+      font-size: 16px;
+      font-weight: 900;
+      color: var(--green);
+    }
+    .trained-today-sub {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 3px;
+    }
+
+    /* PREV BEST BADGE in workout */
+    .prev-best-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(249,115,22,0.12);
+      border: 1px solid rgba(249,115,22,0.3);
+      border-radius: 8px;
+      padding: 6px 10px;
+      margin: 4px 16px 0;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--orange);
+    }
+    .prev-best-label {
+      color: var(--text-muted);
+      font-weight: 400;
+    }
 
     /* WORKOUT COMPLETE */
     .complete-screen {
@@ -1225,6 +1351,7 @@ let state = {
   setData: {},         // { exIndex: [ {weight, reps, done}, ... ] }
   restActive: false,
   restSeconds: 0,
+  restDefault: 90,   // user-adjustable default rest duration
   restTimer: null,
   workoutStart: null,
   workoutSessions: [], // loaded from Firebase
@@ -1402,6 +1529,134 @@ function detectNewPRs(exercises, prevPRs) {
   });
   return newPRs;
 }
+
+// ── PROGRESS CHARTS ──────────────────────────────
+function getExerciseHistory(exerciseName, sessions) {
+  const points = [];
+  // sessions is newest-first; reverse to get oldest-first for charting
+  [...sessions].reverse().forEach(s => {
+    if (!s.exercises?.[exerciseName]) return;
+    const doneSets = (s.exercises[exerciseName].sets || []).filter(s => s.done && s.weight && +s.weight > 0);
+    if (!doneSets.length) return;
+    const best = doneSets.reduce((a,b) => (+b.weight > +a.weight ? b : a));
+    points.push({ date: s.startedAt, weight: +best.weight, reps: best.reps });
+  });
+  return points;
+}
+
+function buildChartSVG(points) {
+  const W = 320, H = 160;
+  const padL = 38, padR = 12, padT = 12, padB = 28;
+  const cW = W - padL - padR;
+  const cH = H - padT - padB;
+  const weights = points.map(p => p.weight);
+  const minW = Math.max(0, Math.min(...weights) - Math.max(5, Math.min(...weights) * 0.1));
+  const maxW = Math.max(...weights) + Math.max(5, Math.max(...weights) * 0.05);
+  const dates = points.map(p => p.date);
+  const minD = Math.min(...dates), maxD = Math.max(...dates);
+  const xS = d => padL + (maxD === minD ? cW/2 : (d - minD) / (maxD - minD) * cW);
+  const yS = w => padT + cH - (w - minW) / (maxW - minW || 1) * cH;
+
+  // Grid lines
+  const gridWeights = [minW, (minW + maxW) / 2, maxW];
+  const gridLines = gridWeights.map(w =>
+    `<line x1="${padL}" y1="${yS(w).toFixed(1)}" x2="${W-padR}" y2="${yS(w).toFixed(1)}" stroke="#222" stroke-width="1"/>`
+  ).join('');
+  const yLabels = gridWeights.map(w =>
+    `<text x="${padL-4}" y="${(yS(w)+4).toFixed(1)}" text-anchor="end" font-size="9" fill="#666">${Math.round(w)}</text>`
+  ).join('');
+
+  // Date labels (max 4)
+  const step = Math.max(1, Math.floor(points.length / 4));
+  const xLabels = points.filter((_, i) => i % step === 0 || i === points.length-1).map(p => {
+    const d = new Date(p.date);
+    const label = (d.getMonth()+1) + '/' + d.getDate();
+    return `<text x="${xS(p.date).toFixed(1)}" y="${H-6}" text-anchor="middle" font-size="9" fill="#666">${label}</text>`;
+  }).join('');
+
+  // Area fill
+  const pathPts = points.map(p => `${xS(p.date).toFixed(1)},${yS(p.weight).toFixed(1)}`).join(' L');
+  const areaD = `M ${pathPts} L ${xS(dates[dates.length-1]).toFixed(1)},${padT+cH} L ${xS(dates[0]).toFixed(1)},${padT+cH} Z`;
+
+  // Line
+  const lineD = `M ${pathPts}`;
+
+  // Dots with tooltip
+  const dots = points.map((p, i) => {
+    const x = xS(p.date).toFixed(1), y = yS(p.weight).toFixed(1);
+    const isFirst = i === 0, isLast = i === points.length - 1;
+    const isPR = p.weight === Math.max(...weights);
+    const r = isPR ? 5 : 3.5;
+    const fill = isPR ? '#F97316' : '#C2570F';
+    return `<circle cx="${x}" cy="${y}" r="${r}" fill="${fill}" stroke="#0A0A0A" stroke-width="1.5"/>`;
+  }).join('');
+
+  // PR label
+  const prPt = points.reduce((a,b) => b.weight > a.weight ? b : a);
+  const prLabel = `<text x="${xS(prPt.date).toFixed(1)}" y="${(yS(prPt.weight)-8).toFixed(1)}" text-anchor="middle" font-size="9" fill="#F97316" font-weight="bold">${prPt.weight}lb</text>`;
+
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block;">
+    <defs>
+      <linearGradient id="cg" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#F97316" stop-opacity="0.25"/>
+        <stop offset="100%" stop-color="#F97316" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+    ${gridLines}${yLabels}${xLabels}
+    <path d="${areaD}" fill="url(#cg)"/>
+    <path d="${lineD}" fill="none" stroke="#F97316" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    ${dots}${prLabel}
+  </svg>`;
+}
+
+window.showExerciseChart = function(name_or_el) {
+  const name = typeof name_or_el === 'string' ? name_or_el : name_or_el;
+  const points = getExerciseHistory(name, state.workoutSessions);
+  const modal = document.createElement('div');
+  modal.className = 'chart-modal';
+  modal.id = 'chart-modal';
+
+  let chartContent;
+  if (points.length === 0) {
+    chartContent = `<div style="text-align:center;padding:32px 0;color:var(--text-muted);font-size:14px;">No data yet — complete a workout with this exercise.</div>`;
+  } else if (points.length === 1) {
+    chartContent = `<div style="text-align:center;padding:16px 0;color:var(--text-muted);font-size:13px;">One session logged — need more to show a trend.</div>
+      <div style="text-align:center;font-size:28px;font-weight:900;color:var(--orange);">${points[0].weight} lbs</div>
+      <div style="text-align:center;font-size:12px;color:var(--text-muted);margin-top:4px;">× ${points[0].reps} reps</div>`;
+  } else {
+    const pr = points.reduce((a,b) => b.weight > a.weight ? b : a);
+    const first = points[0];
+    const last = points[points.length-1];
+    const gain = last.weight - first.weight;
+    chartContent = `
+      <div style="display:flex;gap:16px;margin-bottom:12px;">
+        <div style="flex:1;text-align:center;">
+          <div style="font-size:20px;font-weight:900;color:var(--orange);">${pr.weight}<span style="font-size:11px;color:var(--text-muted);"> lbs</span></div>
+          <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;">PR</div>
+        </div>
+        <div style="flex:1;text-align:center;">
+          <div style="font-size:20px;font-weight:900;color:${gain >= 0 ? 'var(--green)' : 'var(--red)'};">${gain >= 0 ? '+' : ''}${gain}<span style="font-size:11px;color:var(--text-muted);"> lbs</span></div>
+          <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;">Progress</div>
+        </div>
+        <div style="flex:1;text-align:center;">
+          <div style="font-size:20px;font-weight:900;color:var(--text);">${points.length}</div>
+          <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;">Sessions</div>
+        </div>
+      </div>
+      ${buildChartSVG(points)}
+    `;
+  }
+
+  modal.innerHTML = `
+    <div class="chart-card">
+      <div class="chart-title">${name}</div>
+      <div class="chart-sub">Weight over time — best set per session</div>
+      ${chartContent}
+      <button class="chart-close" onclick="document.getElementById('chart-modal').remove()">Close</button>
+    </div>
+  `;
+  document.getElementById('app').appendChild(modal);
+};
 
 // ── BLOCK HELPERS ────────────────────────────────
 const BLOCK_WEEKS = 8;
@@ -1700,6 +1955,10 @@ function renderHome() {
   const blockPct = Math.round(((weekNumber - 1) / BLOCK_WEEKS) * 100);
   const weekLabel = `Week ${weekNumber} of ${BLOCK_WEEKS}`;
 
+  // Check if already trained today
+  const todayStr = new Date().toDateString();
+  const trainedToday = sessions.some(s => new Date(s.startedAt).toDateString() === todayStr);
+
   // Calendar month
   if (!state.calMonth) state.calMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
   const calHTML = renderCalendarHTML(sessions, state.calMonth);
@@ -1746,12 +2005,27 @@ function renderHome() {
       ${calHTML}
 
       <!-- Next Workout CTA -->
+      ${trainedToday ? `
+      <div class="trained-today-card">
+        <div class="trained-today-icon">✅</div>
+        <div>
+          <div class="trained-today-title">Nice work today.</div>
+          <div class="trained-today-sub">${lastSession ? lastSession.dayName + ' — ' + formatDuration(lastSession.duration || 0) : ''}</div>
+          <div class="trained-today-sub" style="margin-top:4px;">Next up: Day ${nextDayIndex + 1} — ${nextDay.name}</div>
+        </div>
+      </div>
+      <div class="next-up-card" id="next-up-card" style="opacity:0.7;">
+        <div class="next-up-label">▸ Train Again Today?</div>
+        <div class="next-up-title">Day ${nextDayIndex + 1}: ${nextDay.name}</div>
+        <div class="next-up-sub">${nextDay.focus} · ${nextDay.exercises.length} exercises</div>
+        <button class="btn-start" id="start-next-btn" style="background:var(--surface3);color:var(--text-muted);">START ANYWAY</button>
+      </div>` : `
       <div class="next-up-card" id="next-up-card">
         <div class="next-up-label">▸ Up Next</div>
         <div class="next-up-title">Day ${nextDayIndex + 1}: ${nextDay.name}</div>
         <div class="next-up-sub">${nextDay.focus} · ${nextDay.exercises.length} exercises</div>
         <button class="btn-start" id="start-next-btn">START WORKOUT</button>
-      </div>
+      </div>`}
 
       <!-- Last Session -->
       ${lastSession ? `
@@ -1917,7 +2191,7 @@ function renderWorkout() {
 
     const prev = state.prevWeights[ex.name];
     const prevHtml = prev
-      ? `<div class="prev-weight">Last time: <strong>${prev.weight} lbs × ${prev.reps}</strong></div>`
+      ? `<div class="prev-best-badge"><span class="prev-best-label">LAST SESSION</span> ${prev.weight} lbs × ${prev.reps} reps</div>`
       : '';
 
     // Build sets
@@ -2045,7 +2319,7 @@ window.toggleSet = function(exIdx, setIdx) {
 
   if (set.done) {
     playSetLogged();
-    startRest(90);
+    startRest(state.restDefault);
   }
 };
 
@@ -2151,22 +2425,54 @@ function reRenderWorkout() {
 }
 
 // ── REST TIMER ─────────────────────────────────
+const REST_PRESETS = [
+  { label: '1m', secs: 60 },
+  { label: '90s', secs: 90 },
+  { label: '2m', secs: 120 },
+  { label: '3m', secs: 180 },
+];
+
 function renderRest() {
   const overlay = document.createElement('div');
   overlay.className = 'rest-overlay';
   overlay.id = 'rest-overlay';
+  const presetsHtml = REST_PRESETS.map(p =>
+    `<button class="rest-preset-btn${state.restDefault === p.secs ? ' active' : ''}"
+      onclick="setRestDefault(${p.secs})">${p.label}</button>`
+  ).join('');
   overlay.innerHTML = `
     <div class="rest-label">REST</div>
-    <div class="rest-timer" id="rest-count">${state.restSeconds}</div>
+    <div class="rest-presets">${presetsHtml}</div>
+    <div class="rest-adjust">
+      <button class="rest-adj-btn" onclick="adjustRest(-15)">−</button>
+      <div class="rest-timer" id="rest-count">${state.restSeconds}</div>
+      <button class="rest-adj-btn" onclick="adjustRest(+15)">+</button>
+    </div>
     <div class="rest-next">Take a breath. Next set coming.</div>
     <button class="rest-skip" onclick="skipRest()">Skip →</button>
   `;
   return overlay;
 }
 
+window.adjustRest = function(delta) {
+  state.restSeconds = Math.max(5, state.restSeconds + delta);
+  const el = document.getElementById('rest-count');
+  if (el) el.textContent = state.restSeconds;
+};
+
+window.setRestDefault = function(secs) {
+  state.restDefault = secs;
+  state.restSeconds = secs;
+  const el = document.getElementById('rest-count');
+  if (el) el.textContent = secs;
+  document.querySelectorAll('.rest-preset-btn').forEach((btn, i) => {
+    btn.classList.toggle('active', REST_PRESETS[i].secs === secs);
+  });
+};
+
 function startRest(seconds) {
   if (state.restTimer) clearInterval(state.restTimer);
-  state.restSeconds = seconds;
+  state.restSeconds = seconds ?? state.restDefault;
   state.restActive = true;
   document.getElementById('app').appendChild(renderRest());
 
@@ -2287,7 +2593,10 @@ function renderHistory() {
       const exHtml = Object.entries(s.exercises || {}).map(([name, ex]) => {
         const doneSets = ex.sets.filter(s => s.done);
         if (!doneSets.length) return '';
-        const tags = doneSets.map(set => `<span class="history-set-tag">${set.weight ? set.weight + 'lb' : ''} × ${set.reps || '—'}</span>`).join('');
+        const tags = doneSets.map(set => {
+          const wt = (set.weight && +set.weight > 0) ? set.weight + 'lb' : 'BW';
+          return `<span class="history-set-tag">${wt} × ${set.reps || '—'}</span>`;
+        }).join('');
         return `<div class="history-ex"><div class="history-ex-name">${name}</div><div class="history-sets">${tags}</div></div>`;
       }).join('');
 
@@ -2411,10 +2720,10 @@ function renderProfile() {
     card.style.cssText = 'padding:0;overflow:hidden;border-radius:14px;';
     prs.forEach(([name, val]) => {
       card.innerHTML += `
-        <div class="pr-item" style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+        <div class="pr-item" onclick="showExerciseChart(this.dataset.name)" data-name="${name}" style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;cursor:pointer;">
           <div>
             <div style="font-size:14px;font-weight:700;">${name}</div>
-            <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">${val.date}</div>
+            <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">${val.date} · tap for chart</div>
           </div>
           <div style="text-align:right;">
             <div style="font-size:18px;font-weight:900;color:var(--orange);">${val.weight}<span style="font-size:11px;font-weight:600;color:var(--text-muted);"> lbs</span></div>
