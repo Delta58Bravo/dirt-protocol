@@ -2900,8 +2900,9 @@ function renderWorkout() {
       <button onclick="exitWorkout()" style="background:none;border:none;color:var(--text-muted);font-size:13px;font-weight:700;padding:4px 0;cursor:pointer;letter-spacing:0.5px;">← Exit</button>
       <div style="font-size:11px;color:var(--text-dim);letter-spacing:0.5px;">Sets lock on ✓ · FINISH saves</div>
     </div>
-    <div class="workout-meta">${prog.name} · Day ${state.dayIndex + 1}</div>
+    <div class="workout-meta">${prog.name} · Day ${state.dayIndex + 1}${state.blockMeta?.weekNumber === DELOAD_WEEK ? ' · <span style="color:#818cf8;font-weight:800;">DELOAD</span>' : ''}</div>
     <div class="workout-title">${day.name}</div>
+    ${state.blockMeta?.weekNumber === DELOAD_WEEK ? `<div style="font-size:11px;color:#818cf8;letter-spacing:0.5px;margin-bottom:4px;">🔄 Deload week — go lighter, nail the form</div>` : ''}
     <div class="workout-progress-bar">
       <div class="workout-progress-fill" style="width:${pct}%"></div>
     </div>
