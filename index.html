@@ -3331,8 +3331,20 @@ function renderHistory() {
   div.innerHTML = `<div class="page-header" style="padding-bottom:16px;"><div class="page-title">History</div></div>`;
 
   const allSessions = state.workoutSessions;
-  const rideSessions  = allSessions.filter(s => s.source === 'strava' || s.type === 'ride');
-  const gymSessions   = allSessions.filter(s => s.source !== 'strava' && s.type !== 'ride');
+  // Rides: must be sourced from Strava AND be a ride-type activity (not runs, hikes, etc.)
+  const rideTypes = new Set(['Ride', 'MountainBikeRide', 'GravelRide', 'VirtualRide', 'EMountainBikeRide']);
+  // Dedup by strava_id — keep only the first occurrence (newest first from Firebase)
+  const seenStravaIds = new Set();
+  const rideSessions = allSessions.filter(s => {
+    if (s.source !== 'strava') return false;
+    if (!rideTypes.has(s.type) && s.type !== 'ride') return false;
+    if (s.strava_id) {
+      if (seenStravaIds.has(s.strava_id)) return false;
+      seenStravaIds.add(s.strava_id);
+    }
+    return true;
+  });
+  const gymSessions = allSessions.filter(s => s.source !== 'strava');
 
   // ── RIDES SECTION ──────────────────────────────
   if (rideSessions.length) {
