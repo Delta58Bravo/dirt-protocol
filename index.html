@@ -3330,23 +3330,59 @@ function renderHistory() {
   div.className = 'main-content scroll-view';
   div.innerHTML = `<div class="page-header" style="padding-bottom:16px;"><div class="page-title">History</div></div>`;
 
-  const section = document.createElement('div');
-  section.className = 'section';
-  section.style.paddingTop = '0';
+  const allSessions = state.workoutSessions;
+  const rideSessions  = allSessions.filter(s => s.source === 'strava' || s.type === 'ride');
+  const gymSessions   = allSessions.filter(s => s.source !== 'strava' && s.type !== 'ride');
 
-  // CSV Export button
-  if (state.workoutSessions.length) {
+  // ── RIDES SECTION ──────────────────────────────
+  if (rideSessions.length) {
+    const rideSection = document.createElement('div');
+    rideSection.className = 'section';
+    rideSection.style.paddingTop = '0';
+    rideSection.innerHTML = `<div class="section-label" style="font-size:11px;font-weight:800;letter-spacing:1.5px;color:var(--text-muted);text-transform:uppercase;margin-bottom:12px;">🚵 Rides</div>`;
+
+    rideSessions.forEach(s => {
+      // Parse stats from the reps string: "10.6 mi · 1152 ft · 1h 10m"
+      const repsStr = Object.values(s.exercises || {})[0]?.sets?.[0]?.reps || '';
+      const parts = repsStr.split('·').map(p => p.trim());
+
+      const activityName = (s.name || '').replace(/^(Ride|Mountain Bike Ride|Gravel Ride|WeightTraining) — /, '');
+
+      const statPills = parts.map(p =>
+        `<span style="display:inline-block;padding:3px 10px;border-radius:20px;background:rgba(249,115,22,0.1);color:var(--orange);font-size:12px;font-weight:700;">${p}</span>`
+      ).join('');
+
+      const card = document.createElement('div');
+      card.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:10px;';
+      card.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
+          <div style="font-size:15px;font-weight:800;color:var(--text);">${activityName}</div>
+          <div style="font-size:12px;color:var(--text-muted);white-space:nowrap;margin-left:8px;">${formatDate(s.startedAt)}</div>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">${statPills}</div>
+      `;
+      rideSection.appendChild(card);
+    });
+
+    div.appendChild(rideSection);
+  }
+
+  // ── GYM SECTION ────────────────────────────────
+  const gymSection = document.createElement('div');
+  gymSection.className = 'section';
+  gymSection.style.paddingTop = rideSessions.length ? '8px' : '0';
+
+  if (gymSessions.length) {
+    gymSection.innerHTML = `<div class="section-label" style="font-size:11px;font-weight:800;letter-spacing:1.5px;color:var(--text-muted);text-transform:uppercase;margin-bottom:12px;">🏋️ Gym</div>`;
+
+    // CSV Export button
     const exportBtn = document.createElement('button');
     exportBtn.className = 'btn-export';
     exportBtn.textContent = '↓ Export to CSV';
-    exportBtn.addEventListener('click', () => exportCSV(state.workoutSessions));
-    section.appendChild(exportBtn);
-  }
+    exportBtn.addEventListener('click', () => exportCSV(gymSessions));
+    gymSection.appendChild(exportBtn);
 
-  if (!state.workoutSessions.length) {
-    section.innerHTML = `<div class="history-empty">No sessions yet.<br>Complete your first workout to see history here.</div>`;
-  } else {
-    state.workoutSessions.forEach(s => {
+    gymSessions.forEach(s => {
       const card = document.createElement('div');
       card.className = 'history-session';
       const exHtml = Object.entries(s.exercises || {}).map(([name, ex]) => {
@@ -3376,11 +3412,13 @@ function renderHistory() {
         ${muscleHtml}
         ${exHtml}
       `;
-      section.appendChild(card);
+      gymSection.appendChild(card);
     });
+  } else if (!rideSessions.length) {
+    gymSection.innerHTML = `<div class="history-empty">No sessions yet.<br>Complete your first workout to see history here.</div>`;
   }
 
-  div.appendChild(section);
+  div.appendChild(gymSection);
   return div;
 }
 
